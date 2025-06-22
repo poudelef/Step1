@@ -24,6 +24,33 @@ This is more than just practice—it's a training ground that replicates real di
 
 ## How to run the code
 
-**Run Front End**
+**Run frontend**
+
 npm install 
 npm run dev
+
+**Run backend**
+
+1. cd backend
+
+2. Install required libraries:
+
+  fastapi==0.109.2
+  httpx==0.26.0
+  uvicorn==0.27.1
+  python-dotenv==1.0.1
+  pydantic==2.5.3
+  fastapi[standard]
+  protobuf<3.20,>=3.9.2
+  openai-whisper==20231117
+  torch==2.2.0
+  torchaudio==2.2.0
+  python-multipart==0.0.9  # For handling file uploads 
+  numpy<1.26.0,>=1.18.5
+  google-auth-oauthlib<0.5,>=0.4.1
+
+**Or** you can run this command directly: pip install -r requirements.txt
+
+3. To run server, use command
+
+  fastapi run main.py
