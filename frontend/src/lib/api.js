@@ -75,15 +75,17 @@ export const api = {
     });
   },
 
-  // InterviewAI - Conduct mock interviews
-  async conductInterview(idea, persona, conversationHistory = [], userMessage) {
-    return apiRequest('/interview', {
+  // InterviewAI - Text interviews are disabled (Voice-Only Mode)
+  // Use conductVoiceInterview instead
+
+  // VoiceInterviewAI - Conduct voice interviews (Voice-Only Mode)
+  async conductVoiceInterview(idea, persona, conversationHistory = [], userMessage, voiceMode = true, voiceId = "shimmer") {
+    return apiRequest('/voice-interview-realtime', {
       method: 'POST',
       body: {
-        idea,
         persona,
-        conversation_history: conversationHistory,
-        user_message: userMessage,
+        audio_file: userMessage, // userMessage should be base64 audio for voice-only
+        conversation_history: conversationHistory
       },
     });
   },
@@ -103,6 +105,28 @@ export const api = {
       body: { idea },
     });
   },
+
+  // Setup WebSocket connection for voice streaming
+  setupVoiceStream(callId, onAudio, onTranscript) {
+    const ws = new WebSocket(`${API_BASE_URL.replace('http', 'ws')}/voice-stream`);
+    
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ call_id: callId }));
+    };
+    
+    ws.onmessage = (event) => {
+      if (event.data instanceof Blob) {
+        onAudio(event.data);
+      } else {
+        const data = JSON.parse(event.data);
+        if (data.type === 'transcript') {
+          onTranscript(data.text);
+        }
+      }
+    };
+    
+    return ws;
+  },
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -113,13 +137,12 @@ export class ValidationFlow {
   constructor(idea) {
     this.idea = idea;
     this.currentStep = 'start';
+    this.progress = 0;
     this.data = {
       personas: [],
       interviews: {},
-      insights: [],
       marketAnalysis: null,
     };
-    this.progress = 0;
   }
 
   async start() {
@@ -164,32 +187,39 @@ export class ValidationFlow {
     };
   }
 
-  async sendMessage(personaName, message) {
+  async sendMessage(personaName, audioBase64) {
     const interview = this.data.interviews[personaName];
     if (!interview) {
       throw new Error('Interview not started for this persona');
     }
 
     try {
-      const response = await api.conductInterview(
+      const response = await api.conductVoiceInterview(
         this.idea,
         interview.persona,
         interview.conversation,
-        message
+        audioBase64
       );
 
-      // Update conversation history
-      interview.conversation.push(`Founder: ${message}`);
-      interview.conversation.push(`${personaName}: ${response.persona_response}`);
+      // Update conversation history with voice conversation format
+      interview.conversation.push({
+        role: 'user',
+        message: response.transcribed_user_message || 'Audio message'
+      });
+      interview.conversation.push({
+        role: 'persona',
+        message: response.persona_response
+      });
 
       return {
         personaResponse: response.persona_response,
-        suggestedQuestions: response.suggested_questions,
+        audioUrl: response.persona_audio_url,
+        transcribedMessage: response.transcribed_user_message,
         conversationStatus: response.conversation_status,
         conversation: interview.conversation,
       };
     } catch (error) {
-      throw new APIError(`Failed to send message: ${error.message}`);
+      throw new APIError(`Failed to send voice message: ${error.message}`);
     }
   }
 

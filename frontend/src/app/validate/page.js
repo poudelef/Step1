@@ -1,17 +1,17 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { ValidationFlow, api, APIError } from '../../lib/api';
+import VoiceOnlyInterview from '../../components/VoiceOnlyInterview';
+import { ValidationDatabase } from '../../lib/database';
 
 export default function ValidatePage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   
   // Main state
-  const [validationFlow, setValidationFlow] = useState(null);
   const [currentStep, setCurrentStep] = useState('input'); // input, personas, interview, analysis, market, results
   const [idea, setIdea] = useState('');
   const [loading, setLoading] = useState(false);
@@ -20,9 +20,7 @@ export default function ValidatePage() {
   // Step-specific state
   const [personas, setPersonas] = useState([]);
   const [selectedPersona, setSelectedPersona] = useState(null);
-  const [conversation, setConversation] = useState([]);
-  const [currentMessage, setCurrentMessage] = useState('');
-  const [suggestedQuestions, setSuggestedQuestions] = useState([]);
+  const [voiceConversationHistory, setVoiceConversationHistory] = useState([]);
   const [insights, setInsights] = useState(null);
   const [marketAnalysis, setMarketAnalysis] = useState(null);
   
@@ -45,71 +43,90 @@ export default function ValidatePage() {
     setError('');
 
     try {
-      const flow = new ValidationFlow(idea);
-      const result = await flow.start();
-      
-      setValidationFlow(flow);
-      setPersonas(result.personas);
-      setProgress(result.progress);
+      // Call personas endpoint directly
+      const response = await fetch('http://localhost:8000/personas', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          idea: idea,
+          target_segment: ''
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setPersonas(data.personas);
+      setProgress(0.25);
       setCurrentStep('personas');
     } catch (err) {
-      setError(err.message);
+      setError('Failed to generate personas: ' + err.message);
     } finally {
       setLoading(false);
     }
   };
 
   const handleSelectPersona = async (personaIndex) => {
-    setLoading(true);
-    setError('');
-
-    try {
-      const result = await validationFlow.startInterview(personaIndex);
-      setSelectedPersona(result.persona);
-      setConversation(result.conversation);
-      setCurrentStep('interview');
-      setCurrentMessage('');
-      setSuggestedQuestions([
-        "What's your biggest challenge with this problem?",
-        "How do you currently solve this?",
-        "What would an ideal solution look like?"
-      ]);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+    setSelectedPersona(personas[personaIndex]);
+    setVoiceConversationHistory([]);
+    setCurrentStep('interview');
   };
 
-  const handleSendMessage = async () => {
-    if (!currentMessage.trim()) return;
-
+  const handleVoiceInterviewComplete = async (conversationHistory) => {
     setLoading(true);
     setError('');
 
     try {
-      const result = await validationFlow.sendMessage(selectedPersona.name, currentMessage);
+      // Analyze the voice conversation
+      await handleAnalyzeVoiceInterview(conversationHistory);
       
-      setConversation(result.conversation);
-      setSuggestedQuestions(result.suggestedQuestions);
-      setCurrentMessage('');
     } catch (err) {
-      setError(err.message);
+      setError('Failed to complete validation: ' + err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAnalyzeInterview = async () => {
+  const handleAnalyzeVoiceInterview = async (conversationHistory) => {
     setLoading(true);
     setError('');
 
     try {
-      const analysis = await validationFlow.analyzeInterview(selectedPersona.name);
-      setInsights(analysis);
+      // Convert voice conversation history to the format expected by coach-ai
+      const formattedConversation = conversationHistory.map(item => 
+        `${item.role === 'user' ? 'Founder' : selectedPersona.name}: ${item.message}`
+      );
+
+      // Call coach-ai endpoint
+      const response = await fetch('http://localhost:8000/coach-ai', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          idea: idea,
+          conversation: formattedConversation
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setInsights(data);
+      setProgress(0.75);
       setCurrentStep('analysis');
+      
+      // Save validation after analysis (in case user doesn't run market analysis)
+      await saveValidationToDatabase(conversationHistory, data, null);
+      
     } catch (err) {
-      setError(err.message);
+      setError('Failed to analyze interview: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -120,20 +137,79 @@ export default function ValidatePage() {
     setError('');
 
     try {
-      const result = await validationFlow.runMarketAnalysis();
-      setMarketAnalysis(result.marketAnalysis);
-      setProgress(result.progress);
+      // Call market-ai endpoint
+      const response = await fetch('http://localhost:8000/market-ai', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          idea: idea
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setMarketAnalysis(data);
+      setProgress(1.0);
       setCurrentStep('market');
+      
+      // Save complete validation with market analysis
+      await saveValidationToDatabase(voiceConversationHistory, insights, data);
+      
     } catch (err) {
-      setError(err.message);
+      setError('Failed to run market analysis: ' + err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleViewResults = () => {
-    const allInsights = validationFlow.getAllInsights();
-    setCurrentStep('results');
+  // Helper function to save validation data
+  const saveValidationToDatabase = async (conversationHistory, insightsData, marketData) => {
+    if (!user) {
+      console.error('No user found - cannot save validation');
+      return;
+    }
+
+    try {
+      console.log('🔄 Attempting to save validation to database...');
+      console.log('User ID:', user.id);
+      console.log('Validation data:', {
+        idea: idea,
+        personas: personas?.length || 0,
+        selectedPersona: selectedPersona?.name || 'None',
+        conversationHistory: conversationHistory?.length || 0,
+        insights: insightsData ? 'Present' : 'Missing',
+        marketAnalysis: marketData ? 'Present' : 'Missing'
+      });
+
+      const validationData = {
+        idea: idea,
+        personas: personas,
+        selectedPersona: selectedPersona,
+        conversationHistory: conversationHistory,
+        insights: insightsData,
+        marketAnalysis: marketData,
+        status: 'completed'
+      };
+
+      const saveResult = await ValidationDatabase.saveValidation(user.id, validationData);
+      
+      if (!saveResult.success) {
+        console.error('❌ Failed to save validation:', saveResult.error);
+        setError(`Failed to save validation: ${saveResult.error}`);
+      } else {
+        console.log('✅ Validation saved successfully!', saveResult.validation);
+        // Show success message to user
+        setError(''); // Clear any previous errors
+      }
+    } catch (error) {
+      console.error('💥 Exception while saving validation:', error);
+      setError(`Error saving validation: ${error.message}`);
+    }
   };
 
   if (authLoading) {
@@ -314,128 +390,13 @@ export default function ValidatePage() {
             </motion.div>
           )}
 
-          {/* Step 3: Interview */}
+          {/* Step 3: Voice-Only Interview */}
           {currentStep === 'interview' && selectedPersona && (
-            <motion.div
-              key="interview"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-            >
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Persona Info */}
-                <div className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border border-gray-200/80 dark:border-slate-600/50 rounded-2xl p-6 shadow-lg">
-                  <div className="text-center mb-4">
-                    <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-pink-500 dark:from-blue-500 dark:to-cyan-400 rounded-full flex items-center justify-center mx-auto mb-3">
-                      <span className="text-white font-bold text-xl">
-                        {selectedPersona.name.charAt(0)}
-                      </span>
-                    </div>
-                    <h3 className="text-xl font-bold text-gray-900 dark:text-white">
-                      {selectedPersona.name}
-                    </h3>
-                    <p className="text-gray-600 dark:text-slate-300">
-                      {selectedPersona.role}
-                    </p>
-                  </div>
-
-                  <div className="space-y-3 text-sm">
-                    <div>
-                      <span className="font-semibold text-gray-700 dark:text-slate-300">Style:</span>
-                      <p className="text-gray-600 dark:text-slate-400">{selectedPersona.communication_style}</p>
-                    </div>
-                    
-                    <div>
-                      <span className="font-semibold text-gray-700 dark:text-slate-300">Goals:</span>
-                      <ul className="text-gray-600 dark:text-slate-400 list-disc list-inside">
-                        {selectedPersona.goals.map((goal, i) => (
-                          <li key={i}>{goal}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Chat Interface */}
-                <div className="lg:col-span-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border border-gray-200/80 dark:border-slate-600/50 rounded-2xl p-6 shadow-lg">
-                  <div className="flex justify-between items-center mb-6">
-                    <h3 className="text-2xl font-bold text-gray-900 dark:text-white">
-                      Interview with {selectedPersona.name}
-                    </h3>
-                    <button
-                      onClick={handleAnalyzeInterview}
-                      disabled={conversation.length === 0}
-                      className="bg-gradient-to-r from-green-500 to-teal-500 text-white px-4 py-2 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Analyze Interview
-                    </button>
-                  </div>
-
-                  {/* Conversation */}
-                  <div className="h-64 overflow-y-auto bg-gray-50 dark:bg-slate-900/50 rounded-xl p-4 mb-4 space-y-3">
-                    {conversation.length === 0 ? (
-                      <p className="text-gray-500 dark:text-slate-400 text-center">
-                        Start the conversation by asking a question...
-                      </p>
-                    ) : (
-                      conversation.map((message, index) => (
-                        <div
-                          key={index}
-                          className={`p-3 rounded-lg ${
-                            message.startsWith('Founder:')
-                              ? 'bg-purple-100 dark:bg-purple-900/30 ml-8'
-                              : 'bg-blue-100 dark:bg-blue-900/30 mr-8'
-                          }`}
-                        >
-                          <p className="text-gray-800 dark:text-slate-200">{message}</p>
-                        </div>
-                      ))
-                    )}
-                  </div>
-
-                  {/* Message Input */}
-                  <div className="flex space-x-3">
-                    <input
-                      type="text"
-                      value={currentMessage}
-                      onChange={(e) => setCurrentMessage(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                      placeholder="Ask a question..."
-                      className="flex-1 px-4 py-3 rounded-xl border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500 dark:focus:ring-cyan-400"
-                    />
-                    <motion.button
-                      onClick={handleSendMessage}
-                      disabled={loading || !currentMessage.trim()}
-                      className="bg-gradient-to-r from-purple-600 to-pink-500 dark:from-blue-600 dark:to-cyan-500 text-white px-6 py-3 rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                    >
-                      Send
-                    </motion.button>
-                  </div>
-
-                  {/* Suggested Questions */}
-                  {suggestedQuestions.length > 0 && (
-                    <div className="mt-4">
-                      <p className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-2">
-                        Suggested questions:
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {suggestedQuestions.map((question, index) => (
-                          <button
-                            key={index}
-                            onClick={() => setCurrentMessage(question)}
-                            className="text-xs bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-300 px-3 py-1 rounded-full hover:bg-gray-200 dark:hover:bg-slate-600 transition-colors"
-                          >
-                            {question}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </motion.div>
+            <VoiceOnlyInterview
+              persona={selectedPersona}
+              idea={idea}
+              onComplete={handleVoiceInterviewComplete}
+            />
           )}
 
           {/* Step 4: Analysis Results */}
@@ -504,11 +465,20 @@ export default function ValidatePage() {
               <div className="text-center">
                 <motion.button
                   onClick={handleMarketAnalysis}
-                  className="bg-gradient-to-r from-purple-600 to-pink-500 dark:from-blue-600 dark:to-cyan-500 text-white px-8 py-4 rounded-xl font-bold text-lg shadow-lg"
+                  className="bg-gradient-to-r from-purple-600 to-pink-500 dark:from-blue-600 dark:to-cyan-500 text-white px-8 py-4 rounded-xl font-bold text-lg shadow-lg mr-4"
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                 >
                   🔍 Run Market Analysis
+                </motion.button>
+                
+                <motion.button
+                  onClick={() => router.push('/dashboard')}
+                  className="bg-gray-600 text-white px-8 py-4 rounded-xl font-bold text-lg shadow-lg"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  ← Back to Dashboard
                 </motion.button>
               </div>
             </motion.div>
@@ -606,14 +576,23 @@ export default function ValidatePage() {
               </div>
 
               <div className="text-center mt-8">
-                <motion.button
-                  onClick={handleViewResults}
-                  className="bg-gradient-to-r from-green-600 to-teal-500 text-white px-8 py-4 rounded-xl font-bold text-lg shadow-lg"
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  🎉 View Complete Results
-                </motion.button>
+                <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-2xl p-8">
+                  <h3 className="text-2xl font-bold text-green-800 dark:text-green-300 mb-4">
+                    🎉 Validation Complete!
+                  </h3>
+                  <p className="text-green-700 dark:text-green-400 mb-6">
+                    You've successfully validated your startup idea with AI-powered customer interviews and market analysis.
+                  </p>
+                  
+                  <motion.button
+                    onClick={() => router.push('/dashboard')}
+                    className="bg-gradient-to-r from-purple-600 to-pink-500 dark:from-blue-600 dark:to-cyan-500 text-white px-8 py-4 rounded-xl font-bold text-lg shadow-lg"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    ← Back to Dashboard
+                  </motion.button>
+                </div>
               </div>
             </motion.div>
           )}
