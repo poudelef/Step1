@@ -4,8 +4,8 @@
 
 Over 90% of startups fail, with the lack of market need cited as the #1 reason for failure (CB Insights, 2018). At the heart of this issue is a broken or non-existent customer discovery process. Despite the popularity of frameworks like Lean Startup, most founders still struggle with the how of effective customer interviews.
 
-<img src="https://github.com/user-attachments/assets/ca2a0063-86c0-4d9f-b99d-0983afa7cdea" alt="market-crash" height="200" width="200" />
-<img src="https://github.com/user-attachments/assets/a97474ac-73f2-49e2-9f2b-05841c0c12ba" alt="market-crash" height="200" width="200"/>
+<img src="https://github.com/user-attachments/assets/ca2a0063-86c0-4d9f-b99d-0983afa7cdea" alt="market-crash" height="200" width="300" />
+<img src="https://github.com/user-attachments/assets/a97474ac-73f2-49e2-9f2b-05841c0c12ba" alt="market-crash" height="200" width="300"/>
 
 We recognized that founders often enter interviews with biases, ask leading questions, and hear only what they want to hear. As a result, they build products based on assumptions—not reality. According to Batova et al. (2016), this overconfidence and lack of qualitative rigor in lean startup customer discovery creates a "validation void" that can doom ventures early.
 
