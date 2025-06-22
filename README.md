@@ -56,8 +56,9 @@ Install required libraries:
     google-auth-oauthlib<0.5,>=0.4.1
     
 OR
+
     pip install -r requirements.txt
 
 To run server, use command
 
-        fastapi run main.py
+    fastapi run main.py
