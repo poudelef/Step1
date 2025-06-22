@@ -120,21 +120,24 @@ export default function Dashboard() {
               title: 'Start New Validation',
               description: 'Enter your startup idea and begin the validation process',
               action: 'Get Started',
-              gradient: 'from-purple-500 to-pink-500 dark:from-blue-500 dark:to-cyan-500'
+              gradient: 'from-purple-500 to-pink-500 dark:from-blue-500 dark:to-cyan-500',
+              onClick: () => router.push('/validate')
             },
             {
               icon: '📊',
               title: 'View Past Validations',
               description: 'Access your previous validation reports and insights',
               action: 'View History',
-              gradient: 'from-pink-500 to-orange-500 dark:from-cyan-500 dark:to-teal-500'
+              gradient: 'from-pink-500 to-orange-500 dark:from-cyan-500 dark:to-teal-500',
+              onClick: () => {}
             },
             {
               icon: '🎯',
               title: 'AI Coaching',
               description: 'Get personalized tips to improve your validation skills',
               action: 'Learn More',
-              gradient: 'from-orange-500 to-red-500 dark:from-teal-500 dark:to-green-500'
+              gradient: 'from-orange-500 to-red-500 dark:from-teal-500 dark:to-green-500',
+              onClick: () => {}
             }
           ].map((card, index) => (
             <motion.div
@@ -144,6 +147,7 @@ export default function Dashboard() {
               initial={{ opacity: 0, y: 50 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.8 + index * 0.1, duration: 0.6, type: "spring", stiffness: 300 }}
+              onClick={card.onClick}
             >
               <motion.div 
                 className="text-6xl mb-6 group-hover:scale-110 transition-transform duration-300"
