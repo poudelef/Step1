@@ -31,11 +31,11 @@ This is more than just practice—it's a training ground that replicates real di
 
 **Run backend**
 
-  Make sure you have python and pip installed
+Make sure you have python and pip installed
   
-  1. cd backend
+      cd backend
   
-  2. Install required libraries:
+Install required libraries:
   
     fastapi==0.109.2
     httpx==0.26.0
@@ -50,9 +50,10 @@ This is more than just practice—it's a training ground that replicates real di
     python-multipart==0.0.9  # For handling file uploads
     numpy<1.26.0,>=1.18.5
     google-auth-oauthlib<0.5,>=0.4.1
-  
-    **Or** pip install -r requirements.txt
+    
+OR
+    pip install -r requirements.txt
 
-3. To run server, use command
+To run server, use command
 
         fastapi run main.py
