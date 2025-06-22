@@ -35,7 +35,7 @@ npm run dev
 
 2. Install required libraries:
 
-  fastapi==0.109.2
+  fastapi==0.109.2 /n
   httpx==0.26.0
   uvicorn==0.27.1
   python-dotenv==1.0.1
