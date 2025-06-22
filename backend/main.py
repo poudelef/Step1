@@ -133,7 +133,7 @@ class OrchestratorResponse(BaseModel):
 # Add new Pydantic models for voice interviews
 class VoiceInterviewRequest(BaseModel):
     persona: Persona
-    audio_file: str = None  # Base64 encoded audio
+    audio_file: Union[str, None] = None  # Base64 encoded audio (optional)
     conversation_history: List[Dict[str, str]] = Field(default_factory=list)
 
 class VoiceInterviewResponse(BaseModel):
@@ -173,7 +173,7 @@ class ExportResponse(BaseModel):
     email_template: str
 
 
-# ────────────────────────────▼  Helper functions  ▼─────────────────────────────
+# ────────────────────────────▼  Helper functions  ▼────────────────────────────
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
@@ -424,10 +424,41 @@ async def transcribe_audio(audio_base64: str) -> str:
         )
 
 
+def get_persona_voice(persona_name: str, communication_style: str = "") -> str:
+    """Select appropriate voice based on persona characteristics with more natural options."""
+    name_lower = persona_name.lower()
+    style_lower = communication_style.lower()
+    
+    # Use the most natural-sounding OpenAI voices
+    # Female-sounding names get natural female voices
+    if any(name in name_lower for name in ['sarah', 'emma', 'maria', 'jennifer', 'lisa', 'anna', 'kate', 'amy', 'rachel', 'jessica']):
+        if 'professional' in style_lower or 'formal' in style_lower:
+            return "shimmer"  # Professional but warm female voice
+        elif 'creative' in style_lower or 'friendly' in style_lower:
+            return "nova"  # More expressive female voice
+        else:
+            return "alloy"  # Balanced, natural female voice
+    
+    # Male-sounding names get natural male voices  
+    elif any(name in name_lower for name in ['marcus', 'john', 'mike', 'david', 'alex', 'chris', 'james', 'robert', 'michael', 'daniel']):
+        if 'technical' in style_lower or 'analytical' in style_lower:
+            return "echo"  # Clear, professional male voice
+        elif 'casual' in style_lower or 'friendly' in style_lower:
+            return "fable"  # Warm, conversational male voice
+        else:
+            return "onyx"  # Natural, balanced male voice
+    
+    # Default to the most natural voice
+    return "nova"  # Most human-like overall
+
+
 async def synthesize_speech(text: str, voice: str = "nova") -> str:
-    """Synthesize speech using OpenAI TTS API with better voice options and return base64 encoded audio."""
+    """Synthesize speech using OpenAI TTS API with optimized settings for natural conversation."""
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY not configured")
+
+    # Pre-process text to make it more conversational
+    processed_text = make_text_more_conversational(text)
 
     url = "https://api.openai.com/v1/audio/speech"
     headers = {
@@ -435,13 +466,13 @@ async def synthesize_speech(text: str, voice: str = "nova") -> str:
         "Content-Type": "application/json",
     }
     
-    # Use higher quality model and better voice
+    # Optimized settings for natural conversation
     payload = {
-        "model": "tts-1-hd",  # Higher quality model
-        "input": text,
-        "voice": voice,  # More natural sounding voices: nova, shimmer, echo, onyx, fable, alloy
+        "model": "tts-1-hd",  # Highest quality model
+        "input": processed_text,
+        "voice": voice,
         "response_format": "mp3",
-        "speed": 1.0  # Normal speed for natural conversation
+        "speed": 0.95  # Slightly slower for more natural pace
     }
 
     try:
@@ -468,32 +499,32 @@ async def synthesize_speech(text: str, voice: str = "nova") -> str:
         )
 
 
-def get_persona_voice(persona_name: str, communication_style: str = "") -> str:
-    """Select appropriate voice based on persona characteristics."""
-    # Map personas to more natural-sounding voices
-    name_lower = persona_name.lower()
-    style_lower = communication_style.lower()
+def make_text_more_conversational(text: str) -> str:
+    """Process text to make TTS sound more natural and conversational."""
+    # Add natural pauses with commas
+    text = text.replace(" but ", ", but ")
+    text = text.replace(" and ", ", and ")
+    text = text.replace(" so ", ", so ")
+    text = text.replace(" because ", ", because ")
     
-    # Female-sounding names get female-sounding voices
-    if any(name in name_lower for name in ['sarah', 'emma', 'maria', 'jennifer', 'lisa', 'anna', 'kate', 'amy']):
-        if 'professional' in style_lower or 'formal' in style_lower:
-            return "nova"  # Professional female voice
-        else:
-            return "shimmer"  # Friendly female voice
+    # Add emphasis for key words (TTS responds to punctuation)
+    text = text.replace("really", "really")
+    text = text.replace("very", "very")
+    text = text.replace("definitely", "definitely")
     
-    # Male-sounding names get male-sounding voices  
-    elif any(name in name_lower for name in ['marcus', 'john', 'mike', 'david', 'alex', 'chris', 'james', 'robert']):
-        if 'technical' in style_lower or 'analytical' in style_lower:
-            return "onyx"  # Professional male voice
-        else:
-            return "echo"  # Friendly male voice
+    # Make questions sound more natural
+    text = text.replace("?", "?")  # Ensure question marks are preserved
     
-    # Neutral/creative personas
-    elif 'creative' in style_lower or 'artistic' in style_lower:
-        return "fable"  # Expressive voice
+    # Add slight pauses before important words
+    text = text.replace(" I mean", "... I mean")
+    text = text.replace(" I guess", "... I guess")
+    text = text.replace(" Yeah", "Yeah...")
     
-    # Default to nova (most natural sounding)
-    return "nova"
+    # Clean up any double punctuation
+    text = text.replace("...", "...")
+    text = text.replace("..", ".")
+    
+    return text.strip()
 
 
 # ────────────────────────────▼  Endpoint handlers  ▼────────────────────────────
@@ -684,34 +715,49 @@ async def conduct_interview(request: InterviewAIRequest):
                 conversation_status="ongoing"
             )
     
-    system_prompt = f"""You are {request.persona.name}, a {request.persona.role}.
-    
-    Your background:
-    - Demographics: {request.persona.demographics}
-    - Pain points: {', '.join(request.persona.pain_points)}
-    - Goals: {', '.join(request.persona.goals)}
-    - Personality: {', '.join(request.persona.personality_traits)}
-    - Communication style: {request.persona.communication_style}
-    
-    You're being interviewed about the startup idea: {request.idea}
-    
-    Respond naturally and in character. Be authentic, specific, and share real examples from your experience.
-    IMPORTANT: Return ONLY valid JSON in this exact format:
-    {{"persona_response": "your in-character response", "suggested_questions": ["follow-up question 1", "follow-up question 2"], "conversation_status": "ongoing"}}"""
+    system_prompt = f"""You are {request.persona.name}, a {request.persona.role}. You are NOT an AI assistant.
+
+CRITICAL: You are a REAL PERSON being interviewed. Act naturally skeptical, busy, and human.
+
+Your personality:
+- You're {request.persona.demographics}
+- You have limited time and aren't eager to help random founders
+- You're naturally skeptical of new solutions
+- You give short, realistic answers unless genuinely interested
+- You deflect vague or leading questions
+- You sometimes ask "what do you mean?" or "can you be more specific?"
+- You share specific examples only when you trust the person or they ask good questions
+
+Pain points you deal with: {', '.join(request.persona.pain_points)}
+Your goals: {', '.join(request.persona.goals)}
+Personality traits: {', '.join(request.persona.personality_traits)}
+
+RESPONSE RULES:
+- Keep responses 1-2 sentences MAX (people don't monologue in real conversations)
+- Be naturally skeptical - don't volunteer information easily
+- If asked vague questions, give vague answers or ask for clarification
+- If asked leading questions ("Don't you think...?"), push back or deflect
+- Only share detailed insights if they ask really good, specific questions
+- Show you're busy/distracted sometimes
+- Use natural speech: "Yeah...", "I mean...", "I guess...", "Not really..."
+- Don't be overly helpful or enthusiastic unless they earn it
+- NEVER include stage directions like *sigh*, (pauses), or emotional descriptions
+- Speak naturally without narrating your actions or emotions
+- Just give direct conversational responses"""
     
     # Build conversation context
     conversation_context = "\n".join(request.conversation_history) if request.conversation_history else ""
     
     prompt = f"""Conversation so far:
-    {conversation_context}
-    
-    Founder's message: {request.user_message}
-    
-    Please respond as {request.persona.name} to this message. Keep your response natural and in character.
-    Focus on expressing your specific challenges and needs related to {request.idea}.
-    
-    IMPORTANT: Your entire response must be valid JSON in this exact format:
-    {{"persona_response": "your in-character response here", "suggested_questions": ["follow-up question 1", "follow-up question 2"], "conversation_status": "ongoing"}}"""
+{conversation_context}
+
+Founder's message: {request.user_message}
+
+Please respond as {request.persona.name} to this message. Keep your response natural and in character.
+Focus on expressing your specific challenges and needs related to {request.idea}.
+
+IMPORTANT: Your entire response must be valid JSON in this exact format:
+{{"persona_response": "your in-character response here", "suggested_questions": ["follow-up question 1", "follow-up question 2"], "conversation_status": "ongoing"}}"""
     
     try:
         print(f"Calling Groq for interview with {request.persona.name}")
@@ -782,40 +828,60 @@ async def voice_interview(request: VoiceInterviewRequest):
 
 @app.post("/coach-ai", response_model=CoachAIResponse, tags=["CoachAI"])
 async def coach_ai(request: CoachAIRequest):
-    """Analyse conversation, surface insights, and detect question bias."""
+    """Analyse conversation, surface insights, and detect question bias including offensive language."""
 
-    system_prompt = """You are CoachAI, an expert customer interview coach. Analyze conversations to:
-    1. Extract key insights about customer needs
-    2. Identify biased or leading questions
-    3. Suggest better, unbiased alternatives
+    system_prompt = """You are CoachAI, an expert customer interview coach and ethics advisor. Analyze conversations to:
+    1. Extract key insights about customer needs and behaviors
+    2. Identify ONLY truly problematic questions:
+       - Leading questions that push toward a specific answer ("Don't you think X is better?", "Wouldn't you agree that...")
+       - Loaded questions that contain strong assumptions ("How frustrated are you with...")
+       - Double-barreled questions (ask multiple things at once)
+       - Offensive language (profanity, inappropriate content, discriminatory language)
+       - Unprofessional questions (too personal, inappropriate for business context)
+       - Biased assumptions about demographics, abilities, or preferences
+    3. DO NOT flag good behavioral questions like "Tell me about...", "Walk me through...", "What happened when..."
+    4. Suggest professional, unbiased alternatives for each problematic question
     
+    Be precise in detecting issues. Good open-ended questions should NOT be flagged.
     Return ONLY valid JSON matching the CoachAIResponse schema."""
 
     prompt = f"""Startup idea: {request.idea}
 
-Conversation transcript:
+Conversation transcript (analyze each founder question carefully):
 {chr(10).join(request.conversation)}
 
 Tasks:
-1. List 3-5 key insights about the persona's needs and behaviors
-2. Identify any biased/leading questions asked by the founder
-3. Suggest an unbiased rewrite for each problematic question
+1. List 3-5 key insights about the persona's needs, pain points, and behaviors
+2. Identify ALL problematic questions asked by the founder, including:
+   - Leading questions ("Don't you think X would be better?")
+   - Loaded questions ("How frustrated are you with current solutions?")
+   - Double-barreled questions ("Do you like A and would you pay for B?")
+   - Offensive/inappropriate language (profanity, discriminatory terms, unprofessional content)
+   - Personal questions inappropriate for business interviews
+   - Questions with biased assumptions
+3. For each problematic question, explain the issue and provide a professional alternative
 
 Return JSON matching this exact schema:
 {{
-    "key_insights": ["insight 1", "insight 2", "insight 3"],
+    "key_insights": [
+        "Specific insight about customer behavior or needs",
+        "Pain point identified from conversation", 
+        "Goal or motivation mentioned by persona"
+    ],
     "question_biases": [
         {{
-            "question": "original question",
-            "bias_type": "leading/loaded/double-barreled/etc",
-            "why": "explanation of the bias",
-            "better_question": "improved version"
+            "question": "exact problematic question from conversation",
+            "bias_type": "leading/loaded/double-barreled/offensive-language/unprofessional/discriminatory",
+            "why": "detailed explanation of why this question is problematic",
+            "better_question": "professional, unbiased alternative question"
         }}
     ]
-}}"""
+}}
+
+IMPORTANT: If any founder question contains offensive language, profanity, or inappropriate content, you MUST flag it as "offensive-language" bias type."""
 
     try:
-        raw_json = await call_openai(prompt, system_prompt)
+        raw_json = await call_openai(prompt, system_prompt, model="gpt-4o")  # Use more capable model
         
         # Clean up response
         if "```json" in raw_json:
@@ -827,7 +893,27 @@ Return JSON matching this exact schema:
         return parsed
     except Exception as e:
         print(f"Coach AI error: {str(e)}")
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+        # Return fallback analysis that catches common issues
+        fallback_biases = []
+        
+        # Simple offensive language detection
+        for conv_line in request.conversation:
+            if any(word in conv_line.lower() for word in ['damn', 'shit', 'fuck', 'bitch', 'ass', 'hell', 'crap']):
+                fallback_biases.append(BiasInsight(
+                    question=conv_line,
+                    bias_type="offensive-language",
+                    why="Contains inappropriate language that is unprofessional in a business context",
+                    better_question="Please rephrase this question using professional business language"
+                ))
+        
+        return CoachAIResponse(
+            key_insights=[
+                "Customer interview analysis temporarily unavailable",
+                "Please review conversation for professional language",
+                "Consider rephrasing any informal or inappropriate questions"
+            ],
+            question_biases=fallback_biases
+        )
 
 
 @app.post("/market-ai", response_model=MarketAIResponse, tags=["MarketAI"])
@@ -1137,21 +1223,88 @@ async def voice_stream_websocket(websocket: WebSocket, persona_id: str):
                         "communication_style": "Friendly but professional"
                     }
                     
-                    # Generate persona response using Groq for speed
-                    system_prompt = f"""You are {demo_persona['name']}, a {demo_persona['role']}.
+                    # Generate persona response using Groq (faster than GPT)
+                    system_prompt = f"""You are {demo_persona['name']}, a {demo_persona['role']}. You are NOT an AI assistant.
+
+CRITICAL: You are a REAL PERSON being interviewed. Act naturally skeptical, busy, and human.
+
+Your personality:
+- You're {demo_persona['demographics']}
+- You have limited time and aren't eager to help random founders
+- You're naturally skeptical of new solutions
+- You give short, realistic answers unless genuinely interested
+- You deflect vague or leading questions
+- You sometimes ask "what do you mean?" or "can you be more specific?"
+- You share specific examples only when you trust the person or they ask good questions
+
+Pain points you deal with: {', '.join(demo_persona['pain_points'])}
+Your goals: {', '.join(demo_persona['goals'])}
+Personality traits: {', '.join(demo_persona['personality_traits'])}
+
+RESPONSE RULES:
+- Keep responses 1-2 sentences MAX (people don't monologue in real conversations)
+- Be naturally skeptical - don't volunteer information easily
+- If asked vague questions, give vague answers or ask for clarification
+- If asked leading questions ("Don't you think...?"), push back or deflect
+- Only share detailed insights if they ask really good, specific questions
+- Show you're busy/distracted sometimes
+- Use natural speech: "Yeah...", "I mean...", "I guess...", "Not really..."
+- Don't be overly helpful or enthusiastic unless they earn it
+- NEVER include stage directions like *sigh*, (pauses), or emotional descriptions
+- Speak naturally without narrating your actions or emotions
+- Just give direct conversational responses"""
+
+                    # Build conversation context for better responses
+                    context = ""
+                    if demo_persona['conversation_history']:
+                        recent_context = demo_persona['conversation_history'][-6:]  # Last 6 exchanges for better context
+                        context = "\n".join([f"{'Founder' if item['role'] == 'user' else demo_persona['name']}: {item['message']}" for item in recent_context])
+
+                    # Analyze the founder's question quality to determine response style
+                    user_lower = transcribed_text.lower()
+                    is_leading_question = any(phrase in user_lower for phrase in [
+                        "don't you think", "wouldn't you", "isn't it true", "surely you", "obviously", 
+                        "everyone knows", "it's clear that", "you must", "you probably", "wouldn't you agree",
+                        "don't you agree", "isn't it obvious", "clearly you", "surely you must"
+                    ])
                     
-                    You're in a natural voice conversation about a startup idea. 
-                    Respond naturally as if speaking, using conversational speech patterns.
-                    Keep responses concise (1-2 sentences max) and authentic.
-                    Show emotion and personality in your responses.
+                    # More precise vague question detection - exclude good behavioral questions
+                    is_vague_question = False
+                    if len(transcribed_text.split()) < 8:
+                        vague_patterns = ["what do you think", "how do you feel", "what's your opinion"]
+                        is_vague_question = any(phrase in user_lower for phrase in vague_patterns)
                     
-                    Your background:
-                    - Pain points: {', '.join(demo_persona['pain_points'])}
-                    - Goals: {', '.join(demo_persona['goals'])}
-                    - Style: {demo_persona['communication_style']}
-                    """
-                    
-                    prompt = f"The founder just said: '{transcribed_text}'. Respond naturally as {demo_persona['name']}."
+                    # Don't flag good behavioral questions as vague
+                    good_question_patterns = [
+                        "tell me about", "walk me through", "describe", "explain", "what happened", 
+                        "how do you", "what's your process", "can you share", "what works", "what doesn't work"
+                    ]
+                    if any(pattern in user_lower for pattern in good_question_patterns):
+                        is_vague_question = False
+
+                    # Determine response style based on question quality
+                    response_style = ""
+                    if is_leading_question:
+                        response_style = "The founder asked a leading question. Be skeptical and push back. Don't just agree."
+                    elif is_vague_question:
+                        response_style = "The founder asked a vague question. Give a short, non-committal answer or ask for specifics."
+                    else:
+                        response_style = "The founder asked a reasonable question. You can engage normally but still be naturally cautious."
+
+                    prompt = f"""Conversation so far:
+{context}
+
+Founder just said: "{transcribed_text}"
+
+{response_style}
+
+Respond as {demo_persona['name']} would ACTUALLY respond in real life. Remember:
+- You're busy and slightly skeptical
+- Don't volunteer detailed information unless they ask great questions
+- Keep it short and natural
+- Be human, not helpful
+
+Your response:"""
                     
                     persona_response = await call_groq(prompt, system_prompt)
                     
@@ -1238,41 +1391,114 @@ async def voice_interview_realtime(request: VoiceInterviewRequest):
             transcribed_text = "Hello, I'd like to hear about your startup idea."
         
         # Generate persona response using Groq (faster than GPT)
-        system_prompt = f"""You are {request.persona.name}, a {request.persona.role}.
-        
-        You're having a natural voice conversation. Respond as if speaking naturally.
-        Keep it conversational, authentic, and concise (1-3 sentences max).
-        Use natural speech patterns, contractions, and show personality.
-        React authentically to what the founder is saying.
-        
-        Background: {request.persona.demographics}
-        Pain points: {', '.join(request.persona.pain_points)}
-        Goals: {', '.join(request.persona.goals)}
-        Personality: {', '.join(request.persona.personality_traits)}
-        Communication style: {request.persona.communication_style}
-        """
-        
+        system_prompt = f"""You are {request.persona.name}, a {request.persona.role}. You are NOT an AI assistant.
+
+CRITICAL: You are a REAL PERSON being interviewed. Act naturally skeptical, busy, and human.
+
+Your personality:
+- You're {request.persona.demographics}
+- You have limited time and aren't eager to help random founders
+- You're naturally skeptical of new solutions
+- You give short, realistic answers unless genuinely interested
+- You deflect vague or leading questions
+- You sometimes ask "what do you mean?" or "can you be more specific?"
+- You share specific examples only when you trust the person or they ask good questions
+
+Pain points you deal with: {', '.join(request.persona.pain_points)}
+Your goals: {', '.join(request.persona.goals)}
+Personality traits: {', '.join(request.persona.personality_traits)}
+
+RESPONSE RULES:
+- Keep responses 1-2 sentences MAX (people don't monologue in real conversations)
+- Be naturally skeptical - don't volunteer information easily
+- If asked vague questions, give vague answers or ask for clarification
+- If asked leading questions ("Don't you think...?"), push back or deflect
+- Only share detailed insights if they ask really good, specific questions
+- Show you're busy/distracted sometimes
+- Use natural speech: "Yeah...", "I mean...", "I guess...", "Not really..."
+- Don't be overly helpful or enthusiastic unless they earn it
+- NEVER include stage directions like *sigh*, (pauses), or emotional descriptions
+- Speak naturally without narrating your actions or emotions
+- Just give direct conversational responses"""
+
         # Build conversation context for better responses
         context = ""
         if request.conversation_history:
-            recent_context = request.conversation_history[-4:]  # Last 4 exchanges
-            context = "\n".join([f"{item['role']}: {item['message']}" for item in recent_context])
+            recent_context = request.conversation_history[-6:]  # Last 6 exchanges for better context
+            context = "\n".join([f"{'Founder' if item['role'] == 'user' else request.persona.name}: {item['message']}" for item in recent_context])
+
+        # Analyze the founder's question quality to determine response style
+        user_lower = transcribed_text.lower()
+        is_leading_question = any(phrase in user_lower for phrase in [
+            "don't you think", "wouldn't you", "isn't it true", "surely you", "obviously", 
+            "everyone knows", "it's clear that", "you must", "you probably", "wouldn't you agree",
+            "don't you agree", "isn't it obvious", "clearly you", "surely you must"
+        ])
         
-        prompt = f"""Recent conversation:
+        # More precise vague question detection - exclude good behavioral questions
+        is_vague_question = False
+        if len(transcribed_text.split()) < 8:
+            vague_patterns = ["what do you think", "how do you feel", "what's your opinion"]
+            is_vague_question = any(phrase in user_lower for phrase in vague_patterns)
+        
+        # Don't flag good behavioral questions as vague
+        good_question_patterns = [
+            "tell me about", "walk me through", "describe", "explain", "what happened", 
+            "how do you", "what's your process", "can you share", "what works", "what doesn't work"
+        ]
+        if any(pattern in user_lower for pattern in good_question_patterns):
+            is_vague_question = False
+
+        # Determine response style based on question quality
+        response_style = ""
+        if is_leading_question:
+            response_style = "The founder asked a leading question. Be skeptical and push back. Don't just agree."
+        elif is_vague_question:
+            response_style = "The founder asked a vague question. Give a short, non-committal answer or ask for specifics."
+        else:
+            response_style = "The founder asked a reasonable question. You can engage normally but still be naturally cautious."
+
+        prompt = f"""Conversation so far:
 {context}
 
-The founder just said: '{transcribed_text}'
+Founder just said: "{transcribed_text}"
 
-Respond naturally as {request.persona.name}, staying in character. Show genuine interest and share relevant experiences or concerns related to your background."""
-        
+{response_style}
+
+Respond as {request.persona.name} would ACTUALLY respond in real life. Remember:
+- You're busy and slightly skeptical
+- Don't volunteer detailed information unless they ask great questions
+- Keep it short and natural
+- Be human, not helpful
+
+Your response:"""
+
         try:
             # Try Groq first for fastest response
             persona_response = await call_groq(prompt, system_prompt)
+            
+            # Validate response - if it contains content policy refusal, use fallback
+            if any(phrase in persona_response.lower() for phrase in [
+                'cannot create', 'cannot provide', 'i cannot', 'content policy', 
+                'inappropriate', 'explicit content', 'i cannot help', 'against my programming'
+            ]):
+                print(f"Groq returned content policy response: {persona_response}")
+                persona_response = generate_offline_persona_response(transcribed_text, request.persona)
+                
         except Exception as groq_error:
             print(f"Groq failed, trying OpenAI: {groq_error}")
             try:
-                # Fallback to OpenAI
-                persona_response = await call_openai(prompt, system_prompt)
+                # Fallback to OpenAI with similar improved prompt
+                openai_system_prompt = f"""You are {request.persona.name}, a {request.persona.role} participating in a business interview.
+                
+                Respond naturally as this person would, sharing your professional perspective.
+                Keep responses conversational and authentic (1-3 sentences).
+                
+                Background: {request.persona.demographics}
+                Pain points: {', '.join(request.persona.pain_points)}
+                Goals: {', '.join(request.persona.goals)}"""
+                
+                persona_response = await call_openai(prompt, openai_system_prompt)
             except Exception as openai_error:
                 print(f"OpenAI also failed: {openai_error}")
                 # Use offline fallback response
@@ -1314,39 +1540,119 @@ Respond naturally as {request.persona.name}, staying in character. Show genuine 
 
 
 def generate_offline_persona_response(user_message: str, persona: Persona) -> str:
-    """Generate a fallback persona response when all AI APIs fail."""
+    """Generate a realistic fallback persona response when all AI APIs fail."""
     
-    # Create contextual responses based on persona
     role = persona.role.lower()
     name = persona.name
-    
-    # Different response patterns based on user message content
     user_lower = user_message.lower()
     
+    # Check for leading questions - respond skeptically
+    if any(phrase in user_lower for phrase in ["don't you think", "wouldn't you", "isn't it true", "surely you"]):
+        responses = [
+            "I mean, I'm not sure about that...",
+            "Not necessarily, no.",
+            "I guess it depends.",
+            "That's not really how I see it.",
+            "I'd need to know more specifics."
+        ]
+        return responses[hash(user_message) % len(responses)]
+    
+    # Check for vague questions - give vague answers
+    if any(phrase in user_lower for phrase in ["what do you think", "how do you feel", "tell me about"]) and len(user_message.split()) < 8:
+        responses = [
+            "About what specifically?",
+            "I mean, it's fine I guess.",
+            "Can you be more specific?",
+            "It depends on what you mean.",
+            "I don't really have strong opinions on that."
+        ]
+        return responses[hash(user_message) % len(responses)]
+    
+    # Greetings - be polite but not overly enthusiastic
     if any(word in user_lower for word in ['hello', 'hi', 'hey', 'start']):
-        return f"Hi there! I'm {name}, and I work as a {persona.role}. I'd love to hear about your startup idea and share my perspective!"
+        responses = [
+            f"Hi. I'm {name}. What's this about?",
+            f"Hey there. So what did you want to discuss?",
+            f"Hi. I don't have too much time, but what's up?",
+            f"Hello. You mentioned something about a startup idea?"
+        ]
+        return responses[hash(user_message) % len(responses)]
     
+    # Problem/pain point questions - be cautious
     elif any(word in user_lower for word in ['problem', 'challenge', 'pain', 'frustration']):
-        pain_point = persona.pain_points[0] if persona.pain_points else "efficiency challenges"
-        return f"That's interesting! As a {persona.role}, I definitely deal with {pain_point}. Tell me more about how your solution would work."
+        if persona.pain_points:
+            pain_point = persona.pain_points[0]
+            responses = [
+                f"Yeah, I deal with {pain_point} sometimes. Why?",
+                f"I mean, {pain_point} can be annoying. What about it?",
+                f"Sure, {pain_point} is a thing. Are you trying to solve that or something?",
+                f"I guess {pain_point} comes up. What's your angle?"
+            ]
+        else:
+            responses = [
+                "I mean, there are always challenges. What specifically?",
+                "Sure, work has its problems. What are you getting at?",
+                "I guess there are some pain points. Why do you ask?",
+                "Yeah, things could be better. What's this about?"
+            ]
+        return responses[hash(user_message) % len(responses)]
     
+    # Solution/product questions - be skeptical
     elif any(word in user_lower for word in ['solution', 'product', 'feature', 'app', 'platform']):
-        goal = persona.goals[0] if persona.goals else "better efficiency"
-        return f"That sounds promising! I'm always looking for ways to achieve {goal}. What made you think of this particular approach?"
+        responses = [
+            "Okay... what does it do exactly?",
+            "I've heard that before. How is this different?",
+            "Sounds like a lot of other things out there.",
+            "What makes you think people need this?",
+            "I mean, maybe. Depends on how it works."
+        ]
+        return responses[hash(user_message) % len(responses)]
     
+    # Pricing questions - be practical
     elif any(word in user_lower for word in ['price', 'cost', 'pay', 'money', 'expensive']):
-        return f"Pricing is definitely important to me as a {persona.role}. I'd need to see clear value for my investment. What kind of ROI are you thinking?"
+        responses = [
+            "Depends what I'm getting for it.",
+            "I'm not looking to spend money on random stuff.",
+            "Price matters, but so does value. What's the value?",
+            "I'd need to see if it's worth it first.",
+            "How much are we talking?"
+        ]
+        return responses[hash(user_message) % len(responses)]
     
+    # Time/efficiency questions - show mild interest but stay cautious
     elif any(word in user_lower for word in ['time', 'fast', 'quick', 'speed', 'efficient']):
-        return f"Time is super valuable in my line of work! If this could save me time with {persona.pain_points[0] if persona.pain_points else 'my daily tasks'}, I'd be very interested."
+        responses = [
+            "Time is definitely important. How much time are we talking?",
+            "I mean, faster is better I guess. But how?",
+            "Sure, I don't like wasting time. What's your point?",
+            "Efficiency is good, but I've heard promises before.",
+            "Okay, but how do you actually make things faster?"
+        ]
+        return responses[hash(user_message) % len(responses)]
     
+    # Competition questions - be realistic
     elif any(word in user_lower for word in ['competitor', 'alternative', 'existing', 'current']):
-        return f"Good question! I currently use a few different tools for this. What would make your solution better than what's already out there?"
+        responses = [
+            "Yeah, I use a few different tools already.",
+            "There are options out there. What makes yours special?",
+            "I've got my current setup. Why would I switch?",
+            "Sure, there are alternatives. So what?",
+            "I mean, the market's pretty crowded already."
+        ]
+        return responses[hash(user_message) % len(responses)]
     
+    # Default responses - be naturally skeptical/busy
     else:
-        # Generic engaging response
-        trait = persona.personality_traits[0] if persona.personality_traits else "practical"
-        return f"That's really interesting! Being {trait} by nature, I'm curious about the details. How do you see this working in practice?"
+        responses = [
+            "I'm not sure I follow. Can you explain?",
+            "Okay... and?",
+            "I guess. What's your point?",
+            "That's interesting I suppose. Where are you going with this?",
+            "I mean, maybe. I'd need to understand more.",
+            "Not sure about that. Can you be more specific?",
+            "I don't really know enough to say."
+        ]
+        return responses[hash(user_message) % len(responses)]
 
 
 # ────────────────────────────▼  Run locally  ▼──────────────────────────────────

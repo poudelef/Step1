@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import VoiceOnlyInterview from '../../components/VoiceOnlyInterview';
+import { ValidationDatabase } from '../../lib/database';
 
 export default function ValidatePage() {
   const { user, loading: authLoading } = useAuth();
@@ -75,11 +76,19 @@ export default function ValidatePage() {
     setCurrentStep('interview');
   };
 
-  const handleVoiceInterviewComplete = (conversationHistory) => {
-    setVoiceConversationHistory(conversationHistory);
-    setProgress(0.6);
-    // Automatically proceed to analysis after voice interview
-    handleAnalyzeVoiceInterview(conversationHistory);
+  const handleVoiceInterviewComplete = async (conversationHistory) => {
+    setLoading(true);
+    setError('');
+
+    try {
+      // Analyze the voice conversation
+      await handleAnalyzeVoiceInterview(conversationHistory);
+      
+    } catch (err) {
+      setError('Failed to complete validation: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleAnalyzeVoiceInterview = async (conversationHistory) => {
@@ -112,6 +121,10 @@ export default function ValidatePage() {
       setInsights(data);
       setProgress(0.75);
       setCurrentStep('analysis');
+      
+      // Save validation after analysis (in case user doesn't run market analysis)
+      await saveValidationToDatabase(conversationHistory, data, null);
+      
     } catch (err) {
       setError('Failed to analyze interview: ' + err.message);
     } finally {
@@ -143,10 +156,59 @@ export default function ValidatePage() {
       setMarketAnalysis(data);
       setProgress(1.0);
       setCurrentStep('market');
+      
+      // Save complete validation with market analysis
+      await saveValidationToDatabase(voiceConversationHistory, insights, data);
+      
     } catch (err) {
       setError('Failed to run market analysis: ' + err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Helper function to save validation data
+  const saveValidationToDatabase = async (conversationHistory, insightsData, marketData) => {
+    if (!user) {
+      console.error('No user found - cannot save validation');
+      return;
+    }
+
+    try {
+      console.log('🔄 Attempting to save validation to database...');
+      console.log('User ID:', user.id);
+      console.log('Validation data:', {
+        idea: idea,
+        personas: personas?.length || 0,
+        selectedPersona: selectedPersona?.name || 'None',
+        conversationHistory: conversationHistory?.length || 0,
+        insights: insightsData ? 'Present' : 'Missing',
+        marketAnalysis: marketData ? 'Present' : 'Missing'
+      });
+
+      const validationData = {
+        idea: idea,
+        personas: personas,
+        selectedPersona: selectedPersona,
+        conversationHistory: conversationHistory,
+        insights: insightsData,
+        marketAnalysis: marketData,
+        status: 'completed'
+      };
+
+      const saveResult = await ValidationDatabase.saveValidation(user.id, validationData);
+      
+      if (!saveResult.success) {
+        console.error('❌ Failed to save validation:', saveResult.error);
+        setError(`Failed to save validation: ${saveResult.error}`);
+      } else {
+        console.log('✅ Validation saved successfully!', saveResult.validation);
+        // Show success message to user
+        setError(''); // Clear any previous errors
+      }
+    } catch (error) {
+      console.error('💥 Exception while saving validation:', error);
+      setError(`Error saving validation: ${error.message}`);
     }
   };
 
@@ -403,11 +465,20 @@ export default function ValidatePage() {
               <div className="text-center">
                 <motion.button
                   onClick={handleMarketAnalysis}
-                  className="bg-gradient-to-r from-purple-600 to-pink-500 dark:from-blue-600 dark:to-cyan-500 text-white px-8 py-4 rounded-xl font-bold text-lg shadow-lg"
+                  className="bg-gradient-to-r from-purple-600 to-pink-500 dark:from-blue-600 dark:to-cyan-500 text-white px-8 py-4 rounded-xl font-bold text-lg shadow-lg mr-4"
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                 >
                   🔍 Run Market Analysis
+                </motion.button>
+                
+                <motion.button
+                  onClick={() => router.push('/dashboard')}
+                  className="bg-gray-600 text-white px-8 py-4 rounded-xl font-bold text-lg shadow-lg"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  ← Back to Dashboard
                 </motion.button>
               </div>
             </motion.div>
@@ -509,9 +580,18 @@ export default function ValidatePage() {
                   <h3 className="text-2xl font-bold text-green-800 dark:text-green-300 mb-4">
                     🎉 Validation Complete!
                   </h3>
-                  <p className="text-green-700 dark:text-green-400">
+                  <p className="text-green-700 dark:text-green-400 mb-6">
                     You've successfully validated your startup idea with AI-powered customer interviews and market analysis.
                   </p>
+                  
+                  <motion.button
+                    onClick={() => router.push('/dashboard')}
+                    className="bg-gradient-to-r from-purple-600 to-pink-500 dark:from-blue-600 dark:to-cyan-500 text-white px-8 py-4 rounded-xl font-bold text-lg shadow-lg"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    ← Back to Dashboard
+                  </motion.button>
                 </div>
               </div>
             </motion.div>

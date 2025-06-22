@@ -13,6 +13,7 @@ export default function VoiceOnlyInterview({ persona, idea, onComplete }) {
   const [error, setError] = useState('');
   const [silenceDetected, setSilenceDetected] = useState(false);
   const [useBrowserSpeech, setUseBrowserSpeech] = useState(false);
+  const [lastTranscript, setLastTranscript] = useState(''); // Track last processed transcript
   
   const mediaRecorder = useRef(null);
   const audioStream = useRef(null);
@@ -22,10 +23,11 @@ export default function VoiceOnlyInterview({ persona, idea, onComplete }) {
   const silenceTimer = useRef(null);
   const audioChunks = useRef([]);
   const speechRecognition = useRef(null);
+  const isProcessingRef = useRef(false);
   
-  // Silence detection parameters
+  // Silence detection parameters - increased for more natural conversation
   const SILENCE_THRESHOLD = 0.01;
-  const SILENCE_DURATION = 3000;
+  const SILENCE_DURATION = 6000; // Increased from 3000ms to 6000ms (6 seconds)
 
   // Initialize audio context and speech recognition
   useEffect(() => {
@@ -36,27 +38,68 @@ export default function VoiceOnlyInterview({ persona, idea, onComplete }) {
       if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         speechRecognition.current = new SpeechRecognition();
-        speechRecognition.current.continuous = true;
-        speechRecognition.current.interimResults = false;
+        speechRecognition.current.continuous = false; // Changed back to false to prevent multiple triggers
+        speechRecognition.current.interimResults = false; // Changed back to false to only get final results
         speechRecognition.current.lang = 'en-US';
+        speechRecognition.current.maxAlternatives = 1;
         
         speechRecognition.current.onresult = (event) => {
-          const transcript = event.results[event.results.length - 1][0].transcript;
-          handleSpeechResult(transcript);
+          // Get the final result
+          const lastResult = event.results[event.results.length - 1];
+          if (lastResult.isFinal) {
+            const transcript = lastResult[0].transcript.trim();
+            if (transcript.length > 0) {
+              console.log('Speech recognition final result:', transcript);
+              
+              // Stop recognition immediately to prevent multiple triggers
+              try {
+                speechRecognition.current.stop();
+              } catch (e) {
+                // Ignore errors when stopping
+              }
+              
+              handleSpeechResult(transcript);
+            }
+          }
         };
         
         speechRecognition.current.onerror = (event) => {
           console.error('Speech recognition error:', event.error);
-          setError('Speech recognition failed. Please try again.');
+          
+          // Don't show error for common interruptions
+          if (event.error !== 'aborted' && event.error !== 'no-speech') {
+            setError('Speech recognition had an issue. Please try again.');
+          }
+          
           setIsListening(false);
+          isProcessingRef.current = false;
           setIsProcessing(false);
         };
         
         speechRecognition.current.onend = () => {
-          if (isListening) {
-            setIsListening(false);
-            setIsProcessing(true);
-          }
+          console.log('Speech recognition ended');
+          setIsListening(false);
+          
+          // Don't automatically restart - wait for user to click again
+        };
+        
+        speechRecognition.current.onstart = () => {
+          console.log('Speech recognition started');
+          setIsListening(true);
+        };
+        
+        speechRecognition.current.onnomatch = () => {
+          console.log('No speech was recognized');
+          setIsListening(false);
+        };
+        
+        speechRecognition.current.onspeechstart = () => {
+          console.log('Speech started - user is speaking');
+        };
+        
+        speechRecognition.current.onspeechend = () => {
+          console.log('Speech ended - processing final result');
+          // Don't immediately stop - let it process final results
         };
       }
     }
@@ -66,6 +109,9 @@ export default function VoiceOnlyInterview({ persona, idea, onComplete }) {
   }, []);
 
   const cleanup = () => {
+    // Reset processing state
+    isProcessingRef.current = false;
+    
     if (audioContext.current) {
       audioContext.current.close();
     }
@@ -86,35 +132,51 @@ export default function VoiceOnlyInterview({ persona, idea, onComplete }) {
     }
   };
 
-  // Handle speech recognition result
+  // Handle speech recognition result (browser-based)
   const handleSpeechResult = async (transcript) => {
+    if (isProcessingRef.current) {
+      console.log('Already processing, ignoring duplicate speech result');
+      return;
+    }
+    
+    // Check for duplicate transcript
+    if (transcript === lastTranscript) {
+      console.log('Duplicate transcript detected, ignoring:', transcript);
+      return;
+    }
+    
+    // Check for very short or meaningless transcripts
+    if (transcript.length < 3 || transcript.toLowerCase().trim() === 'uh' || transcript.toLowerCase().trim() === 'um') {
+      console.log('Ignoring short/meaningless transcript:', transcript);
+      return;
+    }
+    
     try {
+      isProcessingRef.current = true;
+      setIsProcessing(true);
       setError('');
+      setLastTranscript(transcript); // Store this transcript to prevent duplicates
       
-      // Update conversation history
-      const newHistory = [
-        ...conversationHistory,
-        { role: 'user', message: transcript },
-      ];
+      console.log('Processing user speech:', transcript);
       
-      // Generate persona response using Groq
-      const response = await generatePersonaResponse(transcript, newHistory);
+      const userMessage = { role: 'user', message: transcript };
+      const updatedHistory = [...conversationHistory, userMessage];
+      setConversationHistory(updatedHistory);
       
-      const finalHistory = [
-        ...newHistory,
-        { role: 'persona', message: response }
-      ];
+      const personaResponse = await generatePersonaResponse(transcript, updatedHistory);
       
+      const personaMessage = { role: 'persona', message: personaResponse };
+      const finalHistory = [...updatedHistory, personaMessage];
       setConversationHistory(finalHistory);
       
-      // Play persona response using browser TTS
-      await playPersonaResponse(response);
+      await speakPersonaResponse(personaResponse);
       
     } catch (error) {
-      console.error('Failed to process speech:', error);
-      setError('Failed to process speech. Please try again.');
-      await playPersonaResponse("I'm sorry, I had trouble understanding that. Could you try speaking again?");
+      console.error('Speech processing error:', error);
+      setError('Failed to process your message. Please try again.');
+      await speakPersonaResponse("I'm sorry, I didn't catch that. Could you repeat what you said?");
     } finally {
+      isProcessingRef.current = false;
       setIsProcessing(false);
     }
   };
@@ -122,6 +184,8 @@ export default function VoiceOnlyInterview({ persona, idea, onComplete }) {
   // Generate persona response using backend
   const generatePersonaResponse = async (userMessage, history) => {
     try {
+      console.log('Generating persona response for:', userMessage);
+      
       const response = await fetch('http://localhost:8000/voice-interview-realtime', {
         method: 'POST',
         headers: {
@@ -136,33 +200,59 @@ export default function VoiceOnlyInterview({ persona, idea, onComplete }) {
 
       if (response.ok) {
         const data = await response.json();
+        console.log('Backend response:', data.persona_response);
         return data.persona_response;
       } else {
+        console.error('Backend API error:', response.status, response.statusText);
         throw new Error(`HTTP error! status: ${response.status}`);
       }
     } catch (error) {
       console.error('Backend API failed, using fallback response:', error);
       
-      // Automatically switch to browser-only mode
-      setUseBrowserSpeech(true);
-      setError('Backend unavailable. Using browser-only mode.');
+      // Fallback persona response based on user message - make it realistic and skeptical
+      const role = persona.role.toLowerCase();
+      const name = persona.name;
+      const userLower = userMessage.toLowerCase();
       
-      // Fallback response generation
-      return generateFallbackResponse(userMessage);
+      // Check for leading questions - respond skeptically
+      if (userLower.includes("don't you think") || userLower.includes("wouldn't you") || userLower.includes("surely you")) {
+        const skepticalResponses = [
+          "I mean, I'm not sure about that...",
+          "Not necessarily, no.",
+          "I guess it depends.",
+          "That's not really how I see it."
+        ];
+        return skepticalResponses[Math.floor(Math.random() * skepticalResponses.length)];
+      }
+      
+      // Check for vague questions
+      if ((userLower.includes("what do you think") || userLower.includes("tell me about")) && userMessage.split(' ').length < 8) {
+        const vageResponses = [
+          "About what specifically?",
+          "Can you be more specific?",
+          "It depends on what you mean.",
+          "I don't really have strong opinions on that."
+        ];
+        return vageResponses[Math.floor(Math.random() * vageResponses.length)];
+      }
+      
+      if (userLower.includes('hello') || userLower.includes('hi')) {
+        return `Hi. I'm ${name}. What's this about?`;
+      } else if (userLower.includes('problem') || userLower.includes('challenge')) {
+        const painPoint = persona.pain_points[0] || 'some challenges';
+        return `Yeah, I deal with ${painPoint} sometimes. Why?`;
+      } else if (userLower.includes('price') || userLower.includes('cost')) {
+        return `Depends what I'm getting for it. What's the value?`;
+      } else {
+        const neutralResponses = [
+          "I'm not sure I follow. Can you explain?",
+          "Okay... and?",
+          "I guess. What's your point?",
+          "I mean, maybe. I'd need to understand more."
+        ];
+        return neutralResponses[Math.floor(Math.random() * neutralResponses.length)];
+      }
     }
-  };
-
-  // Fallback response when backend fails
-  const generateFallbackResponse = (userMessage) => {
-    const responses = [
-      `That's really interesting! As a ${persona.role}, I can definitely relate to challenges around ${userMessage.toLowerCase().includes('time') ? 'time management' : 'efficiency'}. Tell me more about how you envision this working.`,
-      `I see what you mean. In my experience as a ${persona.role}, that kind of solution could be really valuable. What made you think of this particular approach?`,
-      `That sounds promising! I've dealt with similar issues in my work. How do you think this would be different from what's currently available?`,
-      `Interesting point! As someone who works in this space, I'm curious about the implementation. Have you thought about potential challenges?`,
-      `That could definitely solve a real problem! I'm wondering about the user experience - how would someone like me actually use this day-to-day?`
-    ];
-    
-    return responses[Math.floor(Math.random() * responses.length)];
   };
 
   // Audio level visualization and silence detection
@@ -203,7 +293,7 @@ export default function VoiceOnlyInterview({ persona, idea, onComplete }) {
       
       // Play initial greeting
       const greeting = `Hi! I'm ${persona.name}, ${persona.role}. I'd love to hear about your startup idea and share my thoughts!`;
-      await playPersonaResponse(greeting);
+      await speakPersonaResponse(greeting);
       
     } catch (error) {
       console.error('Failed to start conversation:', error);
@@ -217,11 +307,27 @@ export default function VoiceOnlyInterview({ persona, idea, onComplete }) {
       setError('');
       setSilenceDetected(false);
       
+      // Prevent starting if already processing
+      if (isProcessingRef.current || isListening) {
+        console.log('Already listening or processing, ignoring start request');
+        return;
+      }
+      
       // Try browser speech recognition first (more reliable)
       if (speechRecognition.current) {
+        console.log('Starting browser speech recognition');
         setUseBrowserSpeech(true);
+        
+        // Stop any existing recognition first
+        try {
+          speechRecognition.current.stop();
+        } catch (e) {
+          // Ignore errors when stopping
+        }
+        
+        // Start new recognition
         speechRecognition.current.start();
-        setIsListening(true);
+        // setIsListening will be set by onstart event
         return;
       }
       
@@ -315,8 +421,14 @@ export default function VoiceOnlyInterview({ persona, idea, onComplete }) {
 
   // Stop listening
   const stopListening = () => {
+    console.log('Stopping listening...');
+    
     if (useBrowserSpeech && speechRecognition.current) {
-      speechRecognition.current.stop();
+      try {
+        speechRecognition.current.stop();
+      } catch (e) {
+        console.log('Error stopping speech recognition:', e);
+      }
       setUseBrowserSpeech(false);
     } else if (mediaRecorder.current && mediaRecorder.current.state === 'recording') {
       mediaRecorder.current.stop();
@@ -327,6 +439,8 @@ export default function VoiceOnlyInterview({ persona, idea, onComplete }) {
     }
     
     setIsListening(false);
+    
+    // Only set processing for non-browser speech (legacy recording method)
     if (!useBrowserSpeech) {
       setIsProcessing(true);
     }
@@ -378,9 +492,9 @@ export default function VoiceOnlyInterview({ persona, idea, onComplete }) {
           
           if (data.persona_audio_url) {
             const audioBase64 = data.persona_audio_url.split(',')[1];
-            await playAudioFromBase64(audioBase64);
+            await speakPersonaResponse(data.persona_response, data.persona_audio_url);
           } else {
-            await playPersonaResponse(data.persona_response);
+            await speakPersonaResponse(data.persona_response);
           }
           
         } catch (error) {
@@ -388,7 +502,7 @@ export default function VoiceOnlyInterview({ persona, idea, onComplete }) {
           setError('API quota exceeded. Using browser speech recognition...');
           // Switch to browser speech recognition for future interactions
           setUseBrowserSpeech(true);
-          await playPersonaResponse("I'm sorry, I had trouble understanding that. Could you try speaking again?");
+          await speakPersonaResponse("I'm sorry, I had trouble understanding that. Could you try speaking again?");
         } finally {
           setIsProcessing(false);
         }
@@ -408,115 +522,138 @@ export default function VoiceOnlyInterview({ persona, idea, onComplete }) {
     }
   };
 
-  // Play persona response audio from base64
-  const playAudioFromBase64 = async (base64Audio) => {
-    return new Promise((resolve) => {
-      setIsPersonaSpeaking(true);
-      
-      const audio = new Audio(`data:audio/mp3;base64,${base64Audio}`);
-      
-      audio.onended = () => {
-        setIsPersonaSpeaking(false);
-        resolve();
-      };
-      
-      audio.onerror = (error) => {
-        console.error('Audio playback error:', error);
-        setIsPersonaSpeaking(false);
-        resolve();
-      };
-      
-      audio.play().catch((error) => {
-        console.error('Audio play error:', error);
-        setIsPersonaSpeaking(false);
-        resolve();
-      });
-    });
-  };
-
-  // Enhanced TTS with better voice selection
-  const playPersonaResponse = async (text) => {
+  // Speak persona response with better voice quality
+  const speakPersonaResponse = async (text, useServerAudio = null) => {
+    if (isPersonaSpeaking) return;
+    
+    setIsPersonaSpeaking(true);
+    
     try {
-      setIsPersonaSpeaking(true);
-      
-      if ('speechSynthesis' in window) {
-        speechSynthesis.cancel();
-        
-        let voices = speechSynthesis.getVoices();
-        if (voices.length === 0) {
-          await new Promise((resolve) => {
-            speechSynthesis.onvoiceschanged = () => {
-              voices = speechSynthesis.getVoices();
-              resolve();
-            };
-            setTimeout(resolve, 1000);
-          });
-        }
-        
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = 0.9;
-        utterance.pitch = 1.0;
-        utterance.volume = 0.9;
-        
-        // Better voice selection based on persona
-        const personaName = persona.name.toLowerCase();
-        let selectedVoice = null;
-        
-        // Try to find a good voice based on persona characteristics
-        if (personaName.includes('sarah') || personaName.includes('emma')) {
-          selectedVoice = voices.find(voice => 
-            voice.lang.includes('en') && 
-            (voice.name.toLowerCase().includes('female') || 
-             voice.name.toLowerCase().includes('samantha') ||
-             voice.name.toLowerCase().includes('karen') ||
-             voice.name.toLowerCase().includes('moira'))
-          );
-        } else if (personaName.includes('marcus') || personaName.includes('michael')) {
-          selectedVoice = voices.find(voice => 
-            voice.lang.includes('en') && 
-            (voice.name.toLowerCase().includes('male') || 
-             voice.name.toLowerCase().includes('daniel') ||
-             voice.name.toLowerCase().includes('alex') ||
-             voice.name.toLowerCase().includes('fred'))
-          );
-        }
-        
-        // Fallback to best English voice
-        if (!selectedVoice) {
-          selectedVoice = voices.find(voice => {
-            const name = voice.name.toLowerCase();
-            const isEnglish = voice.lang.includes('en');
-            return isEnglish && (name.includes('google') || name.includes('microsoft') || name.includes('enhanced'));
-          }) || voices.find(voice => voice.lang.includes('en'));
-        }
-        
-        if (selectedVoice) {
-          utterance.voice = selectedVoice;
-        }
-        
-        return new Promise((resolve) => {
-          utterance.onend = () => {
-            setIsPersonaSpeaking(false);
-            resolve();
-          };
-          
-          utterance.onerror = (error) => {
-            console.error('Speech synthesis error:', error);
-            setIsPersonaSpeaking(false);
-            resolve();
-          };
-          
-          speechSynthesis.speak(utterance);
-        });
-      } else {
-        setTimeout(() => {
-          setIsPersonaSpeaking(false);
-        }, 3000);
+      // If server provided audio, use that first
+      if (useServerAudio) {
+        const audio = new Audio(useServerAudio);
+        audio.onended = () => setIsPersonaSpeaking(false);
+        audio.onerror = () => {
+          console.log('Server audio failed, falling back to browser TTS');
+          speakWithBrowserTTS(text);
+        };
+        await audio.play();
+        return;
       }
+      
+      // Otherwise use enhanced browser TTS
+      speakWithBrowserTTS(text);
+      
     } catch (error) {
-      console.error('Failed to play persona response:', error);
+      console.error('Error playing persona response:', error);
       setIsPersonaSpeaking(false);
     }
+  };
+
+  const speakWithBrowserTTS = (text) => {
+    if ('speechSynthesis' in window) {
+      // Cancel any ongoing speech
+      speechSynthesis.cancel();
+      
+      // Pre-process text for more natural speech
+      const processedText = makeTextMoreNatural(text);
+      
+      const utterance = new SpeechSynthesisUtterance(processedText);
+      
+      // Enhanced voice selection based on persona
+      const voices = speechSynthesis.getVoices();
+      const personaVoice = selectBestBrowserVoice(voices, persona);
+      
+      if (personaVoice) {
+        utterance.voice = personaVoice;
+      }
+      
+      // Optimized settings for natural conversation
+      utterance.rate = 0.85;  // Slightly slower for more natural pace
+      utterance.pitch = personaVoice?.name.includes('Female') || personaVoice?.name.includes('Woman') ? 1.1 : 0.9;
+      utterance.volume = 0.9;
+      
+      utterance.onend = () => {
+        setIsPersonaSpeaking(false);
+      };
+      
+      utterance.onerror = (error) => {
+        console.error('Browser TTS error:', error);
+        setIsPersonaSpeaking(false);
+      };
+      
+      speechSynthesis.speak(utterance);
+    } else {
+      setIsPersonaSpeaking(false);
+    }
+  };
+
+  const makeTextMoreNatural = (text) => {
+    // Add natural pauses and emphasis for better TTS
+    let processed = text;
+    
+    // Add pauses for natural speech rhythm
+    processed = processed.replace(/\. /g, '... ');
+    processed = processed.replace(/, /g, ', ');
+    
+    // Emphasize conversational words
+    processed = processed.replace(/\bI mean\b/g, 'I mean,');
+    processed = processed.replace(/\bI guess\b/g, 'I guess,');
+    processed = processed.replace(/\bYeah\b/g, 'Yeah,');
+    processed = processed.replace(/\bWell\b/g, 'Well,');
+    processed = processed.replace(/\bSo\b/g, 'So,');
+    
+    // Make questions more natural
+    processed = processed.replace(/\?/g, '?');
+    
+    return processed;
+  };
+
+  const selectBestBrowserVoice = (voices, persona) => {
+    if (!voices.length) return null;
+    
+    const name = persona.name.toLowerCase();
+    const demographics = persona.demographics.toLowerCase();
+    
+    // Prefer high-quality voices
+    const highQualityVoices = voices.filter(voice => 
+      voice.name.includes('Premium') || 
+      voice.name.includes('Enhanced') ||
+      voice.name.includes('Neural') ||
+      voice.localService === false // Cloud-based voices are usually better
+    );
+    
+    const voicesToSearch = highQualityVoices.length > 0 ? highQualityVoices : voices;
+    
+    // Gender-based voice selection with better matching
+    const femaleNames = ['sarah', 'emma', 'maria', 'jennifer', 'lisa', 'anna', 'kate', 'amy', 'rachel', 'jessica'];
+    const maleNames = ['marcus', 'john', 'mike', 'david', 'alex', 'chris', 'james', 'robert', 'michael', 'daniel'];
+    
+    let preferredGender = 'female';
+    if (maleNames.some(maleName => name.includes(maleName))) {
+      preferredGender = 'male';
+    }
+    
+    // Find the best voice match
+    const genderVoices = voicesToSearch.filter(voice => {
+      const voiceName = voice.name.toLowerCase();
+      if (preferredGender === 'female') {
+        return voiceName.includes('female') || voiceName.includes('woman') || 
+               voiceName.includes('samantha') || voiceName.includes('victoria') ||
+               voiceName.includes('karen') || voiceName.includes('susan');
+      } else {
+        return voiceName.includes('male') || voiceName.includes('man') ||
+               voiceName.includes('alex') || voiceName.includes('daniel') ||
+               voiceName.includes('tom') || voiceName.includes('fred');
+      }
+    });
+    
+    // Prefer US English voices for consistency
+    const englishVoices = genderVoices.filter(voice => 
+      voice.lang.startsWith('en-US') || voice.lang.startsWith('en-GB')
+    );
+    
+    return englishVoices[0] || genderVoices[0] || voicesToSearch[0];
   };
 
   // End conversation
@@ -663,14 +800,17 @@ export default function VoiceOnlyInterview({ persona, idea, onComplete }) {
                   {isListening && (
                     <motion.button
                       onClick={stopListening}
-                      className="bg-orange-500 text-white px-6 py-3 rounded-full font-semibold shadow-lg hover:bg-orange-600 transition-colors"
+                      className={`${useBrowserSpeech 
+                        ? 'bg-green-500 text-white px-8 py-4 rounded-full font-bold text-lg shadow-xl hover:bg-green-600' 
+                        : 'bg-orange-500 text-white px-6 py-3 rounded-full font-semibold shadow-lg hover:bg-orange-600'
+                      } transition-colors`}
                       initial={{ opacity: 0, x: 20 }}
                       animate={{ opacity: 1, x: 0 }}
                       exit={{ opacity: 0, x: 20 }}
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
                     >
-                      Done Speaking
+                      {useBrowserSpeech ? '✅ Done Speaking' : 'Done Speaking'}
                     </motion.button>
                   )}
                 </AnimatePresence>
@@ -689,15 +829,27 @@ export default function VoiceOnlyInterview({ persona, idea, onComplete }) {
                     : isProcessing
                     ? 'Processing your message...'
                     : isListening
-                    ? `Listening... ${useBrowserSpeech ? '(Browser Speech)' : '(Click 🛑 or "Done Speaking" when finished)'}`
+                    ? `🎤 I'm listening... ${useBrowserSpeech ? '(Take your time - click "Done" when finished)' : '(Auto-stop after 6 seconds of silence)'}`
                     : 'Click 🎤 to start speaking'
                   }
                 </p>
                 
+                {/* Enhanced listening feedback for browser speech */}
+                {isListening && useBrowserSpeech && (
+                  <div className="bg-blue-500/20 border border-blue-400 rounded-lg p-4 mt-4">
+                    <p className="text-blue-300 text-sm mb-2">
+                      🎯 Listening with Browser Speech Recognition
+                    </p>
+                    <p className="text-blue-200 text-xs">
+                      Speak naturally - I'll wait for you to finish. Click "Done Speaking" when you're finished talking.
+                    </p>
+                  </div>
+                )}
+                
                 {/* Silence detection indicator */}
                 {isListening && !useBrowserSpeech && (
                   <p className="text-sm text-cyan-400">
-                    {silenceDetected ? 'Silence detected - stopping soon...' : 'Auto-stop after 3 seconds of silence'}
+                    {silenceDetected ? 'Silence detected - stopping soon...' : 'Auto-stop after 6 seconds of silence'}
                   </p>
                 )}
                 
