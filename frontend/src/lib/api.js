@@ -1,5 +1,5 @@
 /**
- * API service for connecting to ValidateAI FastAPI backend
+ * API service for connecting to StepOne FastAPI backend
  */
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';

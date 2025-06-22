@@ -1,4 +1,4 @@
-# ValidateAI Backend
+# StepOne Backend
 
 AI Customer Discovery Copilot backend built with FastAPI. This service coordinates multiple AI agents to help founders validate startup ideas through simulated customer interviews.
 

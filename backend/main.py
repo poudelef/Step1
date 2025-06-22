@@ -27,7 +27,7 @@ load_dotenv()
 # Also load from .env.local if it exists
 load_dotenv('.env.local')
 
-app = FastAPI(title="ValidateAI Backend", version="0.1.0")
+app = FastAPI(title="StepOne Backend", version="0.1.0")
 
 # Add CORS middleware for frontend connection
 app.add_middleware(
@@ -532,7 +532,7 @@ def make_text_more_conversational(text: str) -> str:
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
-    return {"status": "healthy", "service": "ValidateAI Backend", "cors": "enabled"}
+    return {"status": "healthy", "service": "StepOne Backend", "cors": "enabled"}
 
 
 @app.get("/test")
@@ -575,7 +575,7 @@ async def voice_interview_realtime_options():
 async def orchestrator(request: OrchestratorRequest):
     """Main orchestrator that coordinates all AI agents."""
     
-    system_prompt = """You are the Orchestrator AI for ValidateAI, coordinating a multi-agent system for startup idea validation.
+    system_prompt = """You are the Orchestrator AI for StepOne, coordinating a multi-agent system for startup idea validation.
     Your role is to manage the flow between PersonaAI, InterviewAI, CoachAI, and MarketAI agents.
     Always respond with structured JSON that matches the expected schema."""
     

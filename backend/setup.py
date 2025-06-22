@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Setup script for ValidateAI Backend
+Setup script for StepOne Backend
 """
 
 import subprocess
@@ -19,7 +19,7 @@ def run_command(command, description):
         return None
 
 def main():
-    print("🚀 Setting up ValidateAI Backend...")
+    print("🚀 Setting up StepOne Backend...")
     
     # Check if we're in the backend directory
     if not os.path.exists('main.py'):

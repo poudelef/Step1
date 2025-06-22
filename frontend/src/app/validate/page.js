@@ -238,7 +238,7 @@ export default function ValidatePage() {
               <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 dark:from-blue-500 dark:to-cyan-400 rounded-xl flex items-center justify-center shadow-lg">
                 <span className="text-white font-bold text-lg">V</span>
               </div>
-              <span className="text-gray-900 dark:text-white font-bold text-2xl tracking-tight">ValidateAI</span>
+              <span className="text-gray-900 dark:text-white font-bold text-2xl tracking-tight">StepOne</span>
             </motion.div>
             
             <div className="flex items-center space-x-4">

@@ -26,7 +26,7 @@ export default function AuthModal({ isOpen, onClose, mode = 'signin' }) {
       if (authMode === 'signup') {
         const { data, error } = await signUp(email, password);
         if (error) throw error;
-        setMessage('🎉 Welcome to ValidateAI! Check your email to confirm your account.');
+        setMessage('🎉 Welcome to StepOne! Check your email to confirm your account.');
       } else {
         const { data, error } = await signIn(email, password);
         if (error) throw error;

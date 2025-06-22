@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "🚀 Starting ValidateAI Voice-Only Demo"
+echo "🚀 Starting StepOne Voice-Only Demo"
 echo "======================================="
 
 # Check if .env file exists

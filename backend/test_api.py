@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test script for ValidateAI Backend API endpoints.
+Test script for StepOne Backend API endpoints.
 Run this to verify all functionality is working properly.
 """
 
@@ -243,7 +243,7 @@ async def test_orchestrator():
 
 async def run_all_tests():
     """Run all API tests."""
-    print("🚀 Starting ValidateAI Backend API Tests\n")
+    print("🚀 Starting StepOne Backend API Tests\n")
     print("="*50)
     
     # Basic connectivity tests

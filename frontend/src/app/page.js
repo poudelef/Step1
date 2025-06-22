@@ -109,7 +109,7 @@ export default function Home() {
                   transition={{ duration: 2, repeat: Infinity }}
                 />
               </div>
-              <span className="text-gray-900 dark:text-white font-bold text-2xl tracking-tight transition-colors duration-300">ValidateAI</span>
+              <span className="text-gray-900 dark:text-white font-bold text-2xl tracking-tight transition-colors duration-300">StepOne</span>
             </motion.div>
             
             <div className="hidden md:flex space-x-8 items-center">
@@ -246,7 +246,7 @@ export default function Home() {
                 <motion.div
                   className="absolute inset-0 bg-gradient-to-r from-pink-500 to-purple-600 dark:from-cyan-500 dark:to-blue-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
                 />
-                <span className="relative z-10">Try ValidateAI Free</span>
+                <span className="relative z-10">Try StepOne Free</span>
               </motion.button>
               
               <motion.button
@@ -335,7 +335,7 @@ export default function Home() {
               transition={{ duration: 0.8, delay: 0.2 }}
               viewport={{ once: true }}
             >
-              See ValidateAI in
+              See StepOne in
               <span className="bg-gradient-to-r from-purple-600 to-pink-500 dark:from-cyan-400 dark:to-blue-400 bg-clip-text text-transparent"> Action</span>
             </motion.h2>
             <motion.p 
@@ -767,7 +767,7 @@ export default function Home() {
                     transition={{ duration: 3, repeat: Infinity }}
                   />
                 </div>
-                <span className="text-gray-900 dark:text-white font-bold text-3xl tracking-tight">ValidateAI</span>
+                <span className="text-gray-900 dark:text-white font-bold text-3xl tracking-tight">StepOne</span>
               </motion.div>
               <p className="text-gray-600 dark:text-slate-300 text-lg mb-6 max-w-md leading-relaxed">
                 Stop building blind. Validate any startup idea in 5 minutes with AI-powered customer discovery.
@@ -864,7 +864,7 @@ export default function Home() {
                 Stay Updated
               </h3>
               <p className="text-gray-600 dark:text-slate-300 mb-6">
-                Get the latest updates on customer discovery trends and ValidateAI features.
+                Get the latest updates on customer discovery trends and StepOne features.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 max-w-md mx-auto">
                 <input
@@ -891,7 +891,7 @@ export default function Home() {
               animate={{ opacity: 1 }}
               transition={{ delay: 0.8 }}
             >
-              © 2025 ValidateAI. Built for founders, by founders. 🚀
+              © 2025 StepOne. Built for founders, by founders. 🚀
             </motion.div>
             
             <motion.div 

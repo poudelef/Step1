@@ -1,4 +1,4 @@
--- ValidateAI Database Schema
+-- StepOne Database Schema
 -- Run this in Supabase SQL Editor to set up validation tracking
 
 -- Validations table
