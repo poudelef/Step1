@@ -228,7 +228,7 @@ export default function Home() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.6, duration: 0.8 }}
             >
-              Get real-sounding customer feedback, question coaching, and deck-ready insights—all powered by AI. 
+              Get real customer insights through voice interviews with AI personas, plus deck-ready insights—all powered by AI. 
               <span className="text-purple-600 dark:text-cyan-400 font-medium"> No cold outreach required.</span>
             </motion.p>
             
@@ -402,7 +402,7 @@ export default function Home() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-left">
               {[
                 { step: "01", title: "Enter Idea", desc: "CRM for freelancers" },
-                { step: "02", title: "AI Interview", desc: "Chat with personas" },
+                { step: "02", title: "Voice Interview", desc: "Talk directly with AI personas that match your target customers" },
                 { step: "03", title: "Get Insights", desc: "Export deck & emails" }
               ].map((item, index) => (
                 <motion.div
@@ -548,10 +548,10 @@ export default function Home() {
               },
               {
                 step: 2,
-                title: "Mock Interview",
-                desc: "Chat with AI personas that match your target customers",
+                title: "Voice Interview",
+                desc: "Talk directly with AI personas that match your target customers",
                 example: '"Freelance Designer"',
-                result: "→ Real-time question coaching",
+                result: "→ Real-time voice conversation",
                 gradient: "from-pink-500/20 to-orange-500/20 dark:from-cyan-500/20 dark:to-teal-500/20",
                 border: "border-pink-300/50 dark:border-cyan-500/30"
               },
@@ -663,8 +663,8 @@ export default function Home() {
             {[
               { icon: "⚡", title: "Market Flash", desc: "Instant pain points and competitor analysis" },
               { icon: "🎭", title: "AI Personas", desc: "Curated customer personas with context" },
-              { icon: "💬", title: "Mock Interviews", desc: "Realistic customer conversations" },
-              { icon: "🎯", title: "Question Coach", desc: "Real-time feedback on question quality" },
+              { icon: "🎤", title: "Voice Interviews", desc: "Natural voice conversations with AI personas" },
+              { icon: "🧠", title: "Real-time AI", desc: "Instant persona responses during conversation" },
               { icon: "📊", title: "Insight Extractor", desc: "Auto-generated pain points and objections" },
               { icon: "📤", title: "Export Kit", desc: "Slide-ready PDFs and email templates" }
             ].map((feature, index) => (

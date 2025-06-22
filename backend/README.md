@@ -1,123 +1,166 @@
 # ValidateAI Backend
 
-FastAPI backend with AI agent orchestration for startup idea validation.
+AI Customer Discovery Copilot backend built with FastAPI. This service coordinates multiple AI agents to help founders validate startup ideas through simulated customer interviews.
 
 ## Architecture
 
-The backend implements a 5-agent AI system:
+The backend implements a multi-agent AI system with these components:
 
-1. **Orchestrator** (Claude) - Coordinates all agents and manages flow
-2. **PersonaAI** (Claude) - Generates customer personas
-3. **InterviewAI** (GPT-4o) - Conducts mock interviews with personas
-4. **CoachAI** (GPT-4o) - Analyzes conversations for bias and insights
-5. **MarketAI** (Perplexity + GPT-4o) - Market research and competitor analysis
+- **Orchestrator**: Coordinates workflow between different AI agents
+- **PersonaAI**: Generates realistic customer personas using Claude
+- **InterviewAI**: Simulates customer interviews using Groq
+- **CoachAI**: Analyzes conversation quality using GPT-4o
+- **MarketAI**: Conducts market research using Perplexity + GPT-4o
+- **VoiceAI**: Handles speech-to-text and text-to-speech using OpenAI Whisper/TTS
+
+## Features
+
+### Core Functionality
+- ✅ **Persona Generation**: Create 3-5 realistic customer personas
+- ✅ **Mock Interviews**: AI-powered customer interview simulation
+- ✅ **Question Coaching**: Real-time feedback on interview questions
+- ✅ **Market Research**: Competitor analysis and trend identification
+- ✅ **Insight Extraction**: Summarize pain points, objections, and quotes
+- ✅ **Export Tools**: Generate slide decks and email templates
+
+### Voice Features
+- ✅ **Voice Interviews**: Conduct interviews via speech
+- ✅ **Speech-to-Text**: Transcribe user audio using Whisper
+- ✅ **Text-to-Speech**: Synthesize persona responses
+
+## API Endpoints
+
+### Core Endpoints
+- `POST /personas` - Generate customer personas
+- `POST /interview` - Conduct text-based interview
+- `POST /voice-interview` - Conduct voice-based interview
+- `POST /coach-ai` - Analyze conversation quality
+- `POST /market-ai` - Conduct market research
+- `POST /insights` - Extract key insights
+- `POST /export` - Generate exports
+
+### Orchestration
+- `POST /orchestrator` - Main workflow coordinator
+
+### Debug
+- `GET /debug/env` - Check API key configuration
+- `GET /debug/claude` - Test Claude API
+- `GET /debug/groq` - Test Groq API
+- `GET /debug/openai` - Test OpenAI API
 
 ## Setup
 
 ### 1. Install Dependencies
-
 ```bash
-cd backend
 pip install -r requirements.txt
 ```
 
-Or use the setup script:
-```bash
-python setup.py
-```
-
-### 2. Environment Variables
-
-Create a `.env` file in the backend directory:
+### 2. Environment Configuration
+Create a `.env` file with your API keys:
 
 ```env
-# API Keys for AI Services
-OPENAI_API_KEY=your_openai_api_key_here
-ANTHROPIC_API_KEY=your_anthropic_api_key_here
-PERPLEXITY_API_KEY=your_perplexity_api_key_here
-
-# FastAPI Settings
-ENVIRONMENT=development
-DEBUG=True
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+PERPLEXITY_API_KEY=pplx-...
+GROQ_API_KEY=gsk_...
 ```
 
 ### 3. Run the Server
-
 ```bash
 python main.py
 ```
 
-The API will be available at `http://localhost:8000`
+The server will start on `http://localhost:8000`
 
-## API Endpoints
+## API Usage Examples
 
-### Health Check
-- `GET /health` - Health check endpoint
-
-### Main Orchestrator
-- `POST /orchestrator` - Main coordination endpoint for AI agents
-
-### Individual Agents
-- `POST /personas` - Generate customer personas
-- `POST /interview` - Conduct mock interviews
-- `POST /coach-ai` - Analyze conversations for insights
-- `POST /market-ai` - Market research and analysis
-
-## API Documentation
-
-Once running, visit:
-- Interactive docs: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
-
-## Usage Example
-
-```python
-import httpx
-
-# Generate personas
-response = httpx.post("http://localhost:8000/personas", json={
-    "idea": "A CRM tool for freelancers",
-    "target_segment": "Creative freelancers"
-})
-
-personas = response.json()["personas"]
-
-# Conduct interview
-response = httpx.post("http://localhost:8000/interview", json={
-    "idea": "A CRM tool for freelancers",
-    "persona": personas[0],
-    "conversation_history": [],
-    "user_message": "What's your biggest challenge with client management?"
-})
-
-interview_result = response.json()
+### Generate Personas
+```bash
+curl -X POST http://localhost:8000/personas \
+  -H "Content-Type: application/json" \
+  -d '{"idea": "CRM for freelancers", "target_segment": "creative freelancers"}'
 ```
 
-## Frontend Integration
+### Conduct Interview
+```bash
+curl -X POST http://localhost:8000/interview \
+  -H "Content-Type: application/json" \
+  -d '{
+    "idea": "CRM for freelancers",
+    "persona": {...},
+    "user_message": "What is your biggest challenge with client management?",
+    "conversation_history": []
+  }'
+```
 
-The frontend connects via the API service at `frontend/src/lib/api.js` which provides:
+### Get Market Research
+```bash
+curl -X POST http://localhost:8000/market-ai \
+  -H "Content-Type: application/json" \
+  -d '{"idea": "CRM for freelancers"}'
+```
 
-- `api.generatePersonas(idea)` - Generate personas
-- `api.conductInterview(idea, persona, history, message)` - Interview simulation
-- `api.analyzeConversation(idea, conversation)` - Get insights
-- `api.analyzeMarket(idea)` - Market analysis
-- `ValidationFlow` class - Complete validation workflow
+## AI Provider Configuration
+
+### OpenAI (GPT-4o + Whisper + TTS)
+- Used for: Question coaching, market research structuring, voice features
+- Models: `gpt-4o-mini`, `whisper-1`, `tts-1`
+- Fallback: Groq for basic completions
+
+### Anthropic Claude
+- Used for: Persona generation, orchestration
+- Model: `claude-3-5-sonnet-20241022`
+- Fallback: OpenAI GPT-4o
+
+### Groq
+- Used for: Fast interview responses
+- Model: `mixtral-8x7b-32768`
+- Fallback: Contextual responses
+
+### Perplexity
+- Used for: Real-time market research
+- Model: `llama-3.1-sonar-small-128k-online`
+- Fallback: Static competitor data
 
 ## Error Handling
 
-All endpoints return structured error responses:
+The backend implements comprehensive error handling:
+- API timeouts with graceful fallbacks
+- JSON parsing error recovery
+- Contextual fallback responses for interviews
+- Demo data fallbacks for market research
 
-```json
-{
-  "detail": "Error description",
-  "status_code": 400
-}
-```
+## Performance Notes
 
-## CORS
-
-CORS is configured to allow requests from `http://localhost:3000` (Next.js frontend).
+- Groq provides fastest interview responses (~2-3s)
+- Claude gives highest quality personas
+- Perplexity provides most current market data
+- OpenAI offers best voice quality
 
 ## Development
 
-The server runs with auto-reload enabled. Changes to the code will automatically restart the server. 
+### Adding New Endpoints
+1. Define Pydantic models in the schemas section
+2. Implement the endpoint handler
+3. Add proper error handling and fallbacks
+4. Update this README
+
+### Testing APIs
+Use the debug endpoints to verify your API keys are working:
+- `/debug/env` - Check key configuration
+- `/debug/openai` - Test OpenAI
+- `/debug/claude` - Test Claude
+- `/debug/groq` - Test Groq
+
+## Deployment
+
+For production deployment:
+1. Set up environment variables securely
+2. Use a production WSGI server like Gunicorn
+3. Configure proper CORS origins
+4. Set up logging and monitoring
+5. Consider rate limiting for API calls
+
+## License
+
+MIT License - see LICENSE file for details. 
