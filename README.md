@@ -7,3 +7,23 @@ Over 90% of startups fail, with the lack of market need cited as the #1 reason f
 We recognized that founders often enter interviews with biases, ask leading questions, and hear only what they want to hear. As a result, they build products based on assumptions—not reality. According to Batova et al. (2016), this overconfidence and lack of qualitative rigor in lean startup customer discovery creates a "validation void" that can doom ventures early.
 
 So, we set out to build something that could help.
+
+## What it does
+
+Our solution is an AI-powered Customer Discovery Agent—a smart, interactive platform that simulates real customer conversations. Founders can pitch their ideas to diverse AI personas (like Sarah, a single mom), engage in guided interviews, and receive real-time analysis of pain points, competitive threats, and unmet needs.
+
+**Our Three-Step Approach**
+
+1. Pitch Your Idea: Founders describe their startup idea and select relevant personas.
+
+2. Practice Interviews: Natural language interviews help founders learn to ask open-ended, unbiased questions.
+
+3. Insights & Feedback: A reasoning agent provides an instant summary of key insights, highlights areas of concern, and offers suggestions for better questioning.
+
+This is more than just practice—it's a training ground that replicates real discovery conditions, while helping founders break out of their confirmation bias loops.
+
+## How to run the code
+
+**Run Front End**
+npm install 
+npm run dev
